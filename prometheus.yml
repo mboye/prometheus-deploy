@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prometheus
+spec:
+  selector:
+    matchLabels:
+      application: prometheus
+  serviceName: "prometheus"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        application: prometheus
+    spec:
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9090
+          name: www
+        volumeMounts:
+        - name: data-volume
+          mountPath: /prometheus
+        - name: config-volume
+          mountPath: /etc/prometheus
+      volumes:
+      - name: config-volume
+        configMap:
+          name: prometheus-config
+      securityContext:
+        fsGroup: 65534
+  volumeClaimTemplates:
+  - metadata:
+      name: data-volume
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval:     10s
+      evaluation_interval: 10s
+
+    scrape_configs:
+    - job_name: 'kubernetes-pods'
+
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['default']
+
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: (9095)
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+      - source_labels: [ __meta_kubernetes_pod_annotation_version]
+        target_label: app_version
+      - source_labels: [ __meta_kubernetes_pod_label_env ]
+        target_label: env
+      - source_labels: [ __meta_kubernetes_pod_label_application ]
+        target_label: application
+      - source_labels: [ __meta_kubernetes_pod_label_version ]
+        target_label: version
